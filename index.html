@@ -14,6 +14,8 @@
     --fg: #efebe4;
     --muted: #8f8a81;
     --line: #3a3834;
+    /* Intensidad de la sombra del pliegue central: 0 = sin sombra, 0.3 = marcada */
+    --spine: 0.10;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -42,12 +44,58 @@
     flex: 1;
     min-height: 0;
     margin: 12px 24px;
+    position: relative;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #stage.zoomed { cursor: grab; }
+  #stage.zoomed.dragging { cursor: grabbing; }
+
+  #zoomer {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    position: relative;
+    transform-origin: 0 0;
   }
-  .book { box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+  .stf__block { filter: drop-shadow(0 16px 40px rgba(0,0,0,.4)); }
+  .page { background: #fff; overflow: hidden; position: relative; }
+  .page::before {
+    content: 'Cargando…';
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    letter-spacing: .08em;
+    color: #b5b0a7;
+  }
+  .page img { position: relative; }
+  .page img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: none;
+  }
+  #spine {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 20;
+    display: none;
+    background: linear-gradient(to right,
+      rgba(0,0,0,0) 0%,
+      rgba(0,0,0,calc(var(--spine) * .5)) 38%,
+      rgba(0,0,0,var(--spine)) 50%,
+      rgba(0,0,0,calc(var(--spine) * .5)) 62%,
+      rgba(0,0,0,0) 100%);
+  }
 
   #loader {
     position: absolute;
@@ -62,22 +110,40 @@
     text-align: center;
     padding: 0 16px;
     transition: opacity .4s;
+    z-index: 30;
   }
   #loader.hidden { opacity: 0; pointer-events: none; }
   .track { width: 180px; height: 2px; background: var(--line); overflow: hidden; }
   #bar { height: 100%; width: 0; background: var(--fg); transition: width .2s; }
 
+  #hint {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(29,28,26,.85);
+    padding: 6px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .6s;
+    z-index: 30;
+  }
+
   footer {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 18px;
+    gap: 14px;
     padding: 8px 16px 18px;
     opacity: 0;
     transition: opacity .4s;
   }
   footer.visible { opacity: 1; }
-  footer button {
+  .btn {
     background: none;
     border: 1px solid var(--line);
     color: var(--fg);
@@ -87,15 +153,20 @@
     cursor: pointer;
     display: grid;
     place-items: center;
-    transition: border-color .2s, background .2s;
+    flex-shrink: 0;
+    transition: border-color .2s, background .2s, opacity .2s;
   }
-  footer button:hover { border-color: var(--fg); background: rgba(255,255,255,.04); }
-  footer svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; }
-  #counter { font-size: 12px; letter-spacing: .08em; color: var(--muted); min-width: 70px; text-align: center; }
+  .btn:hover { border-color: var(--fg); background: rgba(255,255,255,.04); }
+  .btn:disabled { opacity: .35; cursor: default; }
+  .btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .sep { width: 1px; height: 22px; background: var(--line); }
+  #counter { font-size: 12px; letter-spacing: .08em; color: var(--muted); min-width: 56px; text-align: center; }
 
   @media (max-width: 600px) {
     header { padding: 14px 16px 4px; font-size: 11px; }
     #stage { margin: 8px 16px; }
+    footer { gap: 8px; }
+    #counter { min-width: 48px; }
   }
 </style>
 </head>
@@ -107,21 +178,30 @@
 </header>
 
 <div id="stage">
+  <div id="zoomer"><div id="spine"></div></div>
   <div id="loader">
     <div class="track"><div id="bar"></div></div>
     <span id="loader-text">Cargando portfolio…</span>
   </div>
+  <span id="hint"></span>
 </div>
 
 <footer id="controls">
-  <button id="prev" aria-label="Página anterior">
+  <button class="btn" id="prev" aria-label="Página anterior" title="Página anterior">
     <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>
   </button>
   <span id="counter"></span>
-  <button id="next" aria-label="Página siguiente">
+  <button class="btn" id="next" aria-label="Página siguiente" title="Página siguiente">
     <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
   </button>
-  <button id="fs" aria-label="Pantalla completa">
+  <span class="sep"></span>
+  <button class="btn" id="zout" aria-label="Alejar" title="Alejar">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2M8.5 11h5"/></svg>
+  </button>
+  <button class="btn" id="zin" aria-label="Acercar" title="Acercar">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2M11 8.5v5M8.5 11h5"/></svg>
+  </button>
+  <button class="btn" id="fs" aria-label="Pantalla completa" title="Pantalla completa">
     <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
   </button>
 </footer>
@@ -131,90 +211,168 @@
 <script>
   // ---- Configuración ----
   const PDF_FILE = 'portfolio.pdf';   // nombre del PDF subido junto a esta página
-  const RENDER_WIDTH = 1600;          // nitidez de cada página (px)
+  const RENDER_WIDTH = 1800;          // nitidez normal de cada página (px)
+  const ZOOM_WIDTH = 3200;            // nitidez al hacer zoom (px)
+  const MAX_ZOOM = 5;
 
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
   const stage = document.getElementById('stage');
+  const zoomer = document.getElementById('zoomer');
+  const spine = document.getElementById('spine');
   const loader = document.getElementById('loader');
   const loaderText = document.getElementById('loader-text');
   const bar = document.getElementById('bar');
+  const hint = document.getElementById('hint');
   const controls = document.getElementById('controls');
   const counter = document.getElementById('counter');
+  const zoutBtn = document.getElementById('zout');
 
-  let images = [];
+  let pdfDoc = null;
+  const images = [];
+  const hiRes = [];
+  const hiResPending = new Set();
+  const pendingPages = new Set();
   let ratio = 0.707;
   let total = 0;
   let pageFlip = null;
   let current = 0;
   let lastSize = '';
+  let isSpread = false;
 
-  function canvasToUrl(canvas) {
-    return new Promise(resolve => {
-      canvas.toBlob(blob => resolve(URL.createObjectURL(blob)), 'image/jpeg', 0.88);
-    });
+  // ---------- Carga del PDF ----------
+  async function renderPage(num, targetWidth) {
+    const page = await pdfDoc.getPage(num);
+    const base = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: Math.min(6, targetWidth / base.width) });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    const url = await new Promise(resolve =>
+      canvas.toBlob(blob => resolve(URL.createObjectURL(blob)), 'image/jpeg', 0.9));
+    canvas.width = canvas.height = 0;
+    return { url, ratio: base.width / base.height };
   }
 
-  async function load() {
-    try {
-      const pdf = await pdfjsLib.getDocument(PDF_FILE).promise;
-      total = pdf.numPages;
-      for (let i = 1; i <= total; i++) {
-        const page = await pdf.getPage(i);
-        const base = page.getViewport({ scale: 1 });
-        if (i === 1) ratio = base.width / base.height;
-        const vp = page.getViewport({ scale: Math.min(3, RENDER_WIDTH / base.width) });
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(vp.width);
-        canvas.height = Math.round(vp.height);
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        await page.render({ canvasContext: ctx, viewport: vp }).promise;
-        images.push(await canvasToUrl(canvas));
-        loaderText.textContent = `Cargando página ${i} de ${total}`;
-        bar.style.width = (i / total * 100) + '%';
-      }
-      loader.classList.add('hidden');
-      controls.classList.add('visible');
-      build();
-    } catch (err) {
-      console.error(err);
-      loaderText.textContent = 'No se pudo cargar el portfolio. Revisa que "' + PDF_FILE + '" esté subido junto a esta página.';
-    }
-  }
-
-  function build() {
+  // Calcula el tamaño de página que entra en pantalla
+  function layout() {
     const r = stage.getBoundingClientRect();
-    const sizeKey = Math.round(r.width) + 'x' + Math.round(r.height);
-    if (pageFlip && sizeKey === lastSize) return;
-    lastSize = sizeKey;
-
-    if (pageFlip) {
-      current = pageFlip.getCurrentPageIndex();
-      pageFlip.destroy();
-      pageFlip = null;
-    }
-    stage.querySelectorAll('.book').forEach(n => n.remove());
-
-    // Una página en pantallas angostas, doble página en pantallas anchas
-    const single = r.width < 700 || r.width < r.height * ratio * 1.3;
-    const spread = single ? 1 : 2;
+    const spreadMode = !(r.width < 700 || r.width < r.height * ratio * 1.3);
+    const spread = spreadMode ? 2 : 1;
     let pageH = r.height;
     let pageW = pageH * ratio;
     if (pageW * spread > r.width) {
       pageW = r.width / spread;
       pageH = pageW / ratio;
     }
-    pageW = Math.floor(pageW);
-    pageH = Math.floor(pageH);
+    return { r, spreadMode, spread, pageW: Math.floor(pageW), pageH: Math.floor(pageH) };
+  }
+
+  let renderWidth = 1400;
+
+  async function ensurePage(i) {
+    if (images[i] || pendingPages.has(i)) return;
+    pendingPages.add(i);
+    const res = await renderPage(i + 1, renderWidth);
+    images[i] = res.url;
+    pendingPages.delete(i);
+    if (!hiRes[i]) zoomer.querySelectorAll(`img[data-i="${i}"]`).forEach(img => { img.src = res.url; });
+  }
+
+  // Carga el resto de las páginas en segundo plano, empezando por las cercanas a la que se está viendo
+  async function backgroundRender() {
+    while (images.filter(Boolean).length < total) {
+      const idx = pageFlip ? pageFlip.getCurrentPageIndex() : 0;
+      let next = -1;
+      for (let d = 0; d < total && next < 0; d++) {
+        for (const i of [idx + d, idx - d]) {
+          if (i >= 0 && i < total && !images[i] && !pendingPages.has(i)) { next = i; break; }
+        }
+      }
+      if (next < 0) break;
+      await ensurePage(next);
+    }
+  }
+
+  async function load() {
+    try {
+      pdfDoc = await pdfjsLib.getDocument(PDF_FILE).promise;
+      total = pdfDoc.numPages;
+      const first = await pdfDoc.getPage(1);
+      const vp = first.getViewport({ scale: 1 });
+      ratio = vp.width / vp.height;
+      const L = layout();
+      renderWidth = Math.round(Math.min(RENDER_WIDTH, Math.max(1000, L.pageW * (devicePixelRatio || 1) * 1.3)));
+
+      const firstBatch = Math.min(total, 3);
+      for (let i = 0; i < firstBatch; i++) {
+        await ensurePage(i);
+        bar.style.width = ((i + 1) / firstBatch * 100) + '%';
+      }
+      loader.classList.add('hidden');
+      controls.classList.add('visible');
+      build();
+      showHint();
+      backgroundRender();
+    } catch (err) {
+      console.error(err);
+      loaderText.textContent = 'No se pudo cargar el portfolio. Revisa que "' + PDF_FILE + '" esté subido junto a esta página.';
+    }
+  }
+
+  function showHint() {
+    const touch = matchMedia('(pointer: coarse)').matches;
+    hint.textContent = touch
+      ? 'Pellizca para hacer zoom'
+      : 'Rueda del mouse para hacer zoom · arrastra para moverte';
+    hint.style.opacity = 1;
+    setTimeout(() => { hint.style.opacity = 0; }, 4000);
+  }
+
+  // ---------- Libro ----------
+  function build(force) {
+    const r = stage.getBoundingClientRect();
+    const sizeKey = Math.round(r.width) + 'x' + Math.round(r.height);
+    if (pageFlip && sizeKey === lastSize && !force) return;
+    lastSize = sizeKey;
+
+    if (pageFlip) {
+      current = pageFlip.getCurrentPageIndex();
+      try { pageFlip.destroy(); } catch (e) {}
+      pageFlip = null;
+    }
+    zoomer.querySelectorAll('.book').forEach(n => n.remove());
+
+    // Una página en pantallas angostas, doble página en pantallas anchas
+    const L = layout();
+    isSpread = L.spreadMode;
+    const spread = L.spread, pageW = L.pageW, pageH = L.pageH;
 
     const el = document.createElement('div');
     el.className = 'book';
     el.style.width = (pageW * spread) + 'px';
     el.style.height = pageH + 'px';
-    stage.appendChild(el);
+    const pages = Array.from({ length: total }, (_, i) => {
+      const d = document.createElement('div');
+      d.className = 'page';
+      const img = document.createElement('img');
+      if (hiRes[i] || images[i]) img.src = hiRes[i] || images[i];
+      img.dataset.i = i;
+      img.alt = '';
+      img.draggable = false;
+      d.appendChild(img);
+      el.appendChild(d);
+      return d;
+    });
+    zoomer.insertBefore(el, spine);
+
+    spine.style.width = Math.round(pageW * 0.16) + 'px';
+    spine.style.height = pageH + 'px';
 
     pageFlip = new St.PageFlip(el, {
       width: pageW,
@@ -223,39 +381,175 @@
       showCover: true,
       usePortrait: true,
       startPage: current,
-      maxShadowOpacity: 0.4,
+      maxShadowOpacity: 0.25,
       flippingTime: 800,
       mobileScrollSupport: false
     });
-    pageFlip.loadFromImages(images);
-    pageFlip.on('flip', updateCounter);
-    updateCounter();
+    pageFlip.loadFromHTML(pages);
+    pageFlip.on('flip', onFlip);
+    pageFlip.on('changeState', e => {
+      spine.style.opacity = (e.data === 'read') ? 1 : 0;
+    });
+    onFlip();
   }
 
-  function updateCounter() {
+  function onFlip() {
     if (!pageFlip) return;
-    counter.textContent = (pageFlip.getCurrentPageIndex() + 1) + ' / ' + total;
+    const idx = pageFlip.getCurrentPageIndex();
+    counter.textContent = (idx + 1) + ' / ' + total;
+    // La sombra del pliegue solo cuando se ven dos páginas abiertas
+    const coverAlone = idx === 0 || (total % 2 === 0 && idx >= total - 1);
+    spine.style.display = (isSpread && !coverAlone) ? 'block' : 'none';
+    if (s > 1) upgradeVisible();
   }
 
+  // Al acercar, las páginas visibles se redibujan en alta resolución
+  async function upgradeVisible() {
+    if (!pageFlip || !pdfDoc) return;
+    const idx = pageFlip.getCurrentPageIndex();
+    for (let i = Math.max(0, idx - 1); i <= Math.min(total - 1, idx + 1); i++) {
+      if (hiRes[i] || hiResPending.has(i)) continue;
+      hiResPending.add(i);
+      const r = await renderPage(i + 1, ZOOM_WIDTH);
+      hiRes[i] = r.url;
+      hiResPending.delete(i);
+      zoomer.querySelectorAll(`img[data-i="${i}"]`).forEach(img => { img.src = r.url; });
+    }
+  }
+
+  // ---------- Zoom sobre el libro ----------
+  let s = 1, tx = 0, ty = 0;
+
+  function applyZoom() {
+    const W = stage.clientWidth, H = stage.clientHeight;
+    if (s <= 1.001) { s = 1; tx = 0; ty = 0; }
+    tx = Math.min(0, Math.max(W * (1 - s), tx));
+    ty = Math.min(0, Math.max(H * (1 - s), ty));
+    zoomer.style.transform = s === 1 ? '' : `translate(${tx}px, ${ty}px) scale(${s})`;
+    stage.classList.toggle('zoomed', s > 1);
+    zoutBtn.disabled = s === 1;
+  }
+
+  function zoomAt(px, py, f) {
+    const ns = Math.min(MAX_ZOOM, Math.max(1, s * f));
+    tx = px - (px - tx) * (ns / s);
+    ty = py - (py - ty) * (ns / s);
+    s = ns;
+    applyZoom();
+    if (s > 1) upgradeVisible();
+  }
+
+  function zoomCenter(f) {
+    zoomAt(stage.clientWidth / 2, stage.clientHeight / 2, f);
+  }
+
+  function local(e) {
+    const r = stage.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  // Rueda del mouse / pellizco en trackpad
+  stage.addEventListener('wheel', e => {
+    if (!pageFlip) return;
+    e.preventDefault();
+    const p = local(e);
+    zoomAt(p.x, p.y, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0025)));
+  }, { passive: false });
+
+  // Arrastrar (con zoom) y pellizcar con dos dedos
+  const pts = new Map();
+  let pinching = false, lastDist = 0, lastMid = null, endTimer = null;
+
+  stage.addEventListener('pointerdown', e => {
+    if (!pageFlip) return;
+    pts.set(e.pointerId, local(e));
+    if (pts.size === 2) {
+      pinching = true;
+      clearTimeout(endTimer);
+      const [a, b] = [...pts.values()];
+      lastDist = Math.hypot(a.x - b.x, a.y - b.y);
+      lastMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    }
+    if (s > 1 || pinching) {
+      stage.setPointerCapture(e.pointerId);
+      stage.classList.add('dragging');
+    }
+  });
+
+  stage.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    const prev = pts.get(e.pointerId);
+    const p = local(e);
+    pts.set(e.pointerId, p);
+    if (pts.size === 2 && pinching) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      tx += m.x - lastMid.x;
+      ty += m.y - lastMid.y;
+      zoomAt(m.x, m.y, lastDist ? d / lastDist : 1);
+      lastDist = d;
+      lastMid = m;
+    } else if (pts.size === 1 && s > 1) {
+      tx += p.x - prev.x;
+      ty += p.y - prev.y;
+      applyZoom();
+    }
+  });
+
+  function endPointer(e) {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (pts.size === 0) {
+      stage.classList.remove('dragging');
+      if (pinching) {
+        // Se reinicia el libro para descartar cualquier vuelta de página a medio empezar
+        endTimer = setTimeout(() => { pinching = false; build(true); }, 120);
+      }
+    }
+  }
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+
+  // Mientras hay zoom o pellizco, el libro no da vuelta páginas al arrastrar
+  const busy = e => s > 1 || pinching || (e.touches && e.touches.length > 1);
+  stage.addEventListener('mousedown', e => { if (busy(e)) e.stopPropagation(); }, true);
+  stage.addEventListener('touchstart', e => { if (busy(e)) e.stopPropagation(); }, { capture: true, passive: true });
+  window.addEventListener('touchmove', e => { if (busy(e)) e.stopPropagation(); }, { capture: true, passive: true });
+  window.addEventListener('touchend', e => { if (busy(e)) e.stopPropagation(); }, true);
+  window.addEventListener('mousemove', e => { if (s > 1) e.stopPropagation(); }, true);
+  window.addEventListener('mouseup', e => { if (s > 1) e.stopPropagation(); }, true);
+
+  // ---------- Controles ----------
   document.getElementById('prev').onclick = () => pageFlip && pageFlip.flipPrev();
   document.getElementById('next').onclick = () => pageFlip && pageFlip.flipNext();
+  document.getElementById('zin').onclick = () => zoomCenter(1.5);
+  zoutBtn.onclick = () => zoomCenter(1 / 1.5);
   document.getElementById('fs').onclick = () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
   };
+
   document.addEventListener('keydown', e => {
     if (!pageFlip) return;
     if (e.key === 'ArrowRight') pageFlip.flipNext();
     if (e.key === 'ArrowLeft') pageFlip.flipPrev();
+    if (e.key === '+' || e.key === '=') zoomCenter(1.5);
+    if (e.key === '-') zoomCenter(1 / 1.5);
+    if (e.key === '0' || e.key === 'Escape') { s = 1; applyZoom(); }
   });
 
   let resizeTimer;
   window.addEventListener('resize', () => {
     if (!images.length) return;
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(build, 250);
+    resizeTimer = setTimeout(() => {
+      s = 1; applyZoom();
+      build();
+    }, 250);
   });
 
+  applyZoom();
   load();
 </script>
 </body>
